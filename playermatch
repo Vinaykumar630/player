@@ -1,0 +1,162 @@
+const express = require("express");
+const app = express();
+const path = require("path");
+const dbPath = path.join(__dirname,"cricketMatchDetails.db");
+const { open } = require("sqlite");
+const sqlite3 = require("sqlite3");
+app.use(express.json());
+
+let db = null;
+
+const initializationDbAndServer = async() =>{
+    try{
+        db = await open({
+            filename : dbPath,
+            driver : sqlite3.Database,
+        });
+        app.listen(3000,()=>
+            console.log(`Server Running at http://localhost:3000`);
+        );
+    } catch(e){
+        console.log(`DB Error:${e.message}`);
+        process.exit(1);
+    }
+};
+
+initializationDbAndServer();
+
+const convertPlayerDbToObject = (everyPlayer) =>{
+    return{
+        playerId : everyPlayer.player_id,
+        playerName : everyPlayer.player_name
+    };
+};
+
+const convertToMatchObject = (object) =>{
+    return{
+        matchId : object.match_id,
+        match : object.match,
+        year : object.year
+    };
+};
+
+//Returns a list of all the players in the player table
+
+app.get("/players/",async(request,response) =>{
+    const getALLPlayerQuery = `
+    SELECT
+       *
+    FROM 
+       player_details;`;
+    const playerList = await db.all(getALLPlayerQuery);
+    response.send(
+        playerList.map((eachObject) =>
+            convertPlayerDbToObject(eachObject)
+        )
+    );
+});
+
+//Returns a specific player based on the player ID
+
+app.get("/players/:playerId/",async(request,response)=>{
+    const {playerId} = request.params;
+    const getSpecificPlayerQuery = `
+    SELECT
+        *
+    FROM
+        player_details
+    WHERE
+         player_id = ${playerId};`;
+    const getPlayer = await db.get(getSpecificPlayerQuery);
+    response.send(convertPlayerDbToObject(getPlayer));
+});
+
+//Updates the details of a specific player based on the player ID
+
+app.put("/players/:playerId/",async(request,response)=>{
+    const {playerName} = request.body;
+    const {playerId} = request.params;
+    const putQuery = `UPDATE
+       player_details
+    SET
+       player_name = '${playerName}'
+    WHERE
+        player_id = ${playerId};`;
+    const playerReport = await db.run(putQuery);
+    response.send("Player Details Updated");
+});
+
+//Returns the match details of a specific match
+
+app.get("/matches/:matchId/",async(request,response)=>{
+    const {matchId} = request.params;
+    const getMatchQuery = `
+    SELECT 
+        *
+    FROM
+        match_details
+    WHERE
+        match_id = ${matchId};`;
+    const matchList = await db.get(matchDetails);
+    response.send(convertToMatchObject(matchList));
+});
+
+
+// Returns a list of all the matches of a player
+
+app.get("/players/:playerId/matches",async(request,response) =>{
+    const {playerId} = request.params;
+    const playerAllQuery = `
+    SELECT 
+        *
+    FROM player_match_score
+        NATURAL JOIN match_details
+    WHERE player_id = ${playerId};`;
+    const playerArray = await db.all(playerAllQuery);
+    response.send(
+        playerArray.map((eachItemPlayer)=>
+            convertPlayerDbToObject(eachItemPlayer)
+        )
+    );
+});
+
+// Returns a list of players of a specific match
+
+app.get("/matches/:matchId/players",async(request,response)=>{
+    const {matchId} = request.params;
+    const matchQuery = `SELECT
+         *
+    FROM
+        player_match_score
+        NATURAL JOIN player_details
+    WHERE 
+        match_id = ${matchId};`;
+    const matchArray = await db.all(matchQuery);
+    response.send(
+        matchArray.map((eachArray) =>
+             convertPlayerDbToObject(eachArray)
+        )
+    );
+});
+
+//Returns the statistics of the total score, fours, sixes of a specific player based on the player ID
+
+app.get("/players/:playerId/playerScore",async(request,response)=>{
+    const {playerId} = request.params;
+    const totalQuery = `
+    SELECT
+        player_id AS playerId,
+        player_name AS playerName,
+        SUM(score) AS totalScore,
+        SUM(fours) AS totalFours,
+        SUM(sixes) AS  totalSixes
+    FROM 
+        player_match_score
+        NATURAL JOIN player_details
+    WHERE 
+        player_id = ${playerId};`;
+    const totalReport = await db.get(totalQuery);
+    response.send(totalReport);
+});
+
+module.exports = app;
